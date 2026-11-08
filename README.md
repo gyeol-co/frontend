@@ -1,94 +1,61 @@
 # gyeol-frontend
 
-> [Gyeol](https://gyeol.co) web app — Next.js 15 (App Router) + React 19 + TypeScript strict.
+결의 Next.js 15 App Router · React 19 · TypeScript 웹 애플리케이션이다.
+Next.js 서버가 화면과 정적 파일을 응답하며, API 데이터는 브라우저에서 가져온다.
+TanStack Query가 서버 데이터를, React Hook Form과 Zod가 입력을 관리한다.
 
-## Stack
+## 개발
 
-| Layer | Tech |
-|-------|------|
-| Framework | Next.js 15 App Router, React 19, RSC + client islands |
-| Server state | TanStack Query v5 (queryOptions pattern, `useInfiniteQuery` for cursor feeds) |
-| Forms / validation | React Hook Form + zod resolvers |
-| URL state | `useSearchParams` + feature-local hooks (`useBrandIndexUrlState`, `useSearchUrlState`) |
-| Styling | Inline `style` + CSS variables (no CSS-in-JS runtime, no Tailwind) |
-| Build | pnpm, Node 20, `output: 'standalone'` for Docker |
-| Typechecking | `tsc --noEmit` enforced pre-deploy |
-
-## Structure
-
-```
-src/
-├── app/                                    # Next.js App Router — server shells + Suspense boundaries
-│   ├── (auth)/
-│   │   ├── login/, signup/, oauth/[provider]/callback/
-│   ├── brands/                             # /brands + /brands/[slug]
-│   ├── products/[product_id]/
-│   ├── discover/, saved/, search/
-│   ├── layout.tsx, providers.tsx
-│   └── page.tsx                            # root redirect → /discover
-├── components/
-│   ├── header/                             # shared top nav
-│   ├── (auth)/                             # login / signup / OAuth button group
-│   ├── (products)/                         # product-card, detail-page, gallery, meta-grid, ...
-│   ├── (brands)/                           # brand-cover, follow-button, empty-state
-│   ├── (brand-index)/                      # brand-card, sort-bar, index-grid, featured-section
-│   ├── (brand-detail)/                     # hero, meta-grid, products-section, related-block
-│   ├── (discover)/                         # discover-page, discover-tab-bar
-│   ├── (wishlist)/                         # wishlist-page, wishlist-save-chip
-│   └── (search)/                           # search-page, bar, filter-bar, brands-row, products-grid, ...
-├── hooks/
-│   ├── (auth)/                             # useAuthMe, useLogoutMutation, useOAuthAuthorize, ...
-│   ├── (products)/, (brands)/, (wishlist)/, (search)/
-│   │     └── {entity}.queries.ts           # exported `queryOptions` — never wrap a bare `useQuery`
-│   └── useDebouncedValue.ts
-├── lib/
-│   ├── api-client.ts                       # fetch + envelope unwrap + `ApiError` throw
-│   └── error-codes.ts                      # shared error code union
-├── schemas/                                # zod URL param / form schemas
-├── types/                                  # shared contract types (FE ↔ BE)
-└── constants/                              # brand styles, product categories, sort options, ...
-```
-
-### Naming convention
-
-- PascalCase file names mirror the exported React component (`ProductCard.tsx` → `ProductCard`).
-- Entity groups live under parenthesized dirs (`(products)`, `(brand-index)`) matching the related BE API resource.
-- Each group has an `index.ts` barrel that re-exports children — component imports go through the barrel, not individual files.
-- Hooks use camelCase (`useBrandIndexUrlState.ts`); utils and constants use kebab-case.
-
-## Query patterns
-
-TanStack Query v5 with **no wrapper hooks around a bare `useQuery`**. Every endpoint ships a `queryOptions` (or `infiniteQueryOptions`) constant/factory:
-
-```ts
-// hooks/(brands)/brand.queries.ts
-export const brandIndexInfiniteQueryOptions = ({ sort, style }) =>
-  infiniteQueryOptions({
-    queryKey: ['brands', 'index', 'infinite', { sort, style: [...style].sort() }],
-    queryFn: ({ pageParam, signal }) => brandIndexGet({ sort, style, ...pageParam }, { signal }),
-    initialPageParam: {},
-    getNextPageParam: (last) => last.nextPageParams ?? undefined,
-  });
-
-// components/(brand-index)/brand-index-page/BrandIndexPage.tsx
-const query = useInfiniteQuery(brandIndexInfiniteQueryOptions({ sort, style }));
-```
-
-Mutations return plain `useMutation` and never toast inside the hook — components own the user-facing feedback.
-
-## Envelope + errors
-
-`lib/api-client.ts` enforces the standard success/error envelope used by the backend. Non-2xx responses are thrown as `ApiError` instances carrying the BE's `error.code`, so feature code can branch on codes like `BRAND_NOT_FOUND` or `WISHLIST_FULL` without peeking at HTTP status directly.
-
-## Local run
+Node 버전은 `.nvmrc`, pnpm 버전은 `package.json`의 `packageManager`에 고정한다.
 
 ```bash
-pnpm install
-echo 'NEXT_PUBLIC_API_URL=http://localhost:8000' > .env.local
-pnpm dev                              # http://localhost:3000
-pnpm typecheck                        # tsc --noEmit (mandatory before deploy)
+nvm use
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-## Portfolio note
+개발 서버는 `http://localhost:3000`, 기본 backend 주소는 `http://localhost:8000`이다.
+브라우저의 backend 주소는 `.env.local`의 `NEXT_PUBLIC_API_URL`로 지정한다.
+이 값은 빌드 시 번들에 포함되므로 비밀 값을 넣지 않는다.
+backend는 프론트 origin의 CORS와 쿠키 기반 인증을 허용해야 한다.
 
-The codebase follows a single rule: **URL is the source of truth** for anything a user can share or bookmark (filter state, search query, pagination entry). Cursor lives only in React Query cache (first-page reset on share is the expected behaviour). This makes deep links feel like the rest of the product — no orphan states, no "oops, that link doesn't reproduce what I saw".
+## 구조
+
+```text
+src/
+├── app/                  # App Router 페이지·레이아웃·provider·전역 스타일
+├── components/           # 기능별 UI
+├── hooks/                # API query options·mutation·URL 상태
+├── lib/                  # API 클라이언트
+├── schemas/              # 입력 검증
+└── types/                # API 타입
+```
+
+`/`는 `/discover`로 이동한다. 상품·브랜드 상세, 검색, 저장 목록,
+로그인·가입·OAuth 콜백 페이지를 제공한다.
+API 요청에는 세션 쿠키를 포함한다.
+
+## 검증
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm build
+```
+
+## 이미지와 배포
+
+이 저장소를 빌드 컨텍스트로 사용한다.
+
+```bash
+docker build --build-arg NEXT_PUBLIC_API_URL=https://api.gyeol.co -t gyeol-frontend:bootstrap .
+docker run --rm -p 3000:3000 gyeol-frontend:bootstrap
+```
+
+런타임은 Node의 `server.js`로 실행하는 Next.js standalone 출력이며 3000 포트를 사용한다.
+`NEXT_PUBLIC_API_URL`을 변경하면 이미지를 다시 빌드한다.
+이미지 CI는 PR에서 검증·빌드를, main과 수동 실행에서 GHCR 게시를 수행한다.
+게시된 digest는 deploy 저장소의 `helm/frontend/values.yaml`에 기록한다.
+Argo CD의 `gyeol-frontend` Application이 Git의 설정을 K3s에 동기화하고,
+Traefik이 `gyeol.co`·`www.gyeol.co` 요청을 frontend Service로 전달한다.
